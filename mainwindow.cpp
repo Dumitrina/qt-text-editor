@@ -1,7 +1,16 @@
 #include "mainwindow.h"
+
 #include <QMenu>
 #include <QMenuBar>
 #include <QVBoxLayout>
+#include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
+#include <QMessageBox>
+#include <QPrinter>
+#include <QPrintDialog>
+#include <QFontDialog>
+#include <QColorDialog>
 
 void MainWindow::SetCentralWidget()
 {
@@ -23,7 +32,7 @@ void MainWindow::SetActions()
     newAct->setToolTip(tr("Create New File"));
 
     openAct->setIcon(QIcon(":/Icons/open.png"));
-    openAct->setText(tr("&Openw"));
+    openAct->setText(tr("&Open"));
     openAct->setToolTip(tr("Open a File"));
 
     saveAct->setIcon(QIcon(":/Icons/save.png"));
@@ -32,7 +41,7 @@ void MainWindow::SetActions()
 
     saveAsAct->setIcon(QIcon(":/Icons/save.png"));
     saveAsAct->setText(tr("S&ave As"));
-    saveAsAct->setToolTip(tr("Save Currnet Text As"));
+    saveAsAct->setToolTip(tr("Save Current Text As"));
 
     printAct->setIcon(QIcon(":/Icons/print.png"));
     printAct->setText(tr("&Print"));
@@ -48,7 +57,7 @@ void MainWindow::SetActions()
 
     cutAct->setIcon(QIcon(":/Icons/cut.png"));
     cutAct->setText(tr("C&ut"));
-    cutAct->setToolTip(tr("Cut Currnet Selected Text"));
+    cutAct->setToolTip(tr("Cut Current Selected Text"));
 
     pasteAct->setIcon(QIcon(":/Icons/paste.png"));
     pasteAct->setText(tr("P&aste"));
@@ -91,6 +100,181 @@ void MainWindow::CreateMenus()
     this->setMenuBar(menuBar);
 }
 
+void MainWindow::newFile()
+{
+    editor->clear();
+    currentFile.clear();
+    setWindowTitle("My Notepad- New Files");
+
+    editor->document()->setModified(false);
+}
+
+void MainWindow::openFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(
+        this,
+        "Open File",
+        "",
+        "Text Files (*.txt);;All Files (*.*)"
+        );
+
+    if(fileName.isEmpty()) return;
+
+    QFile file(fileName);
+
+    if(!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        QMessageBox::warning(
+            this,"Error","could nnot open the selected file..");
+        return;
+    }
+
+    QTextStream in(&file);
+
+    editor->setPlainText(in.readAll());
+
+    file.close();
+
+    currentFile = fileName;
+    setWindowTitle("My notepad - " + currentFile);
+
+    editor->document()->setModified(false);
+}
+
+void MainWindow::saveFileAs()
+{
+    QString fileName = QFileDialog::getSaveFileName(
+        this,
+        "Save File As",
+        "",
+        "Text Files (*.txt);;All Files (*.*)"
+        );
+
+    if(fileName.isEmpty()) return;
+
+    QFile file(fileName);
+
+    if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        QMessageBox::warning(
+            this,
+            "Error",
+            "Could not save the file."
+            );
+        return;
+    }
+
+    QTextStream out(&file);
+    out << editor->toPlainText();
+
+    file.close();
+
+    currentFile=fileName;
+    setWindowTitle("My Notepad - " + currentFile);
+    editor->document()->setModified(false);
+}
+
+void MainWindow::saveFile()
+{
+    if (currentFile.isEmpty())
+    {
+        saveFileAs();
+        return;
+    }
+
+    QFile file(currentFile);
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        QMessageBox::warning(
+            this,
+            "Error",
+            "Could not save the file."
+            );
+        return;
+    }
+
+    QTextStream out(&file);
+    out << editor->toPlainText();
+
+    file.close();
+    editor->document()->setModified(false);
+}
+
+void MainWindow::printFile()
+{
+    QPrinter printer;
+
+    QPrintDialog printDialog(&printer, this);
+
+    if (printDialog.exec() == QDialog::Accepted)
+    {
+        editor->print(&printer);
+    }
+}
+
+void MainWindow::chooseFont()
+{
+    bool ok;
+
+    QFont font = QFontDialog::getFont(
+        &ok,
+        editor->currentFont(),
+        this,
+        "Choose Font"
+        );
+
+    if (ok)
+        editor->setCurrentFont(font);
+}
+
+void MainWindow::chooseColor()
+{
+    QColor color = QColorDialog::getColor(
+        editor->textColor(),
+        this,
+        "Choose Text Color"
+        );
+
+    if (color.isValid())
+        editor->setTextColor(color);
+}
+
+bool MainWindow::maybeSave()
+{
+    if (!editor->document()->isModified())
+        return true;
+
+    QMessageBox::StandardButton result =
+        QMessageBox::warning(
+            this,
+            "Unsaved Changes",
+            "The document has unsaved changes.\nDo you want to save them?",
+            QMessageBox::Save |
+                QMessageBox::Discard |
+                QMessageBox::Cancel
+            );
+
+    if (result == QMessageBox::Save)
+    {
+        saveFile();
+        return !editor->document()->isModified();
+    }
+
+    if (result == QMessageBox::Cancel)
+        return false;
+
+    return true;
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (maybeSave())
+        event->accept();
+    else
+        event->ignore();
+}
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow {parent},
     newAct {new QAction},
@@ -109,4 +293,43 @@ MainWindow::MainWindow(QWidget *parent) :
     SetCentralWidget();
     SetActions();
     CreateMenus();
+
+
+    connect(newAct, &QAction::triggered,
+            this, &MainWindow::newFile);
+
+    connect(openAct, &QAction::triggered,
+            this, &MainWindow::openFile);
+
+    connect(saveAct, &QAction::triggered,
+            this, &MainWindow::saveFile);
+
+    connect(saveAsAct, &QAction::triggered,
+            this, &MainWindow::saveFileAs);
+
+    connect(copyAct, &QAction::triggered,
+            editor, &QTextEdit::copy);
+
+    connect(cutAct, &QAction::triggered,
+            editor, &QTextEdit::cut);
+
+    connect(pasteAct, &QAction::triggered,
+            editor, &QTextEdit::paste);
+
+    connect(exitAct, &QAction::triggered,
+            this, &QWidget::close);
+
+    connect(exitAct, &QAction::triggered,
+            this, &QWidget::close);
+
+    connect(printAct, &QAction::triggered,
+            this, &MainWindow::printFile);
+
+    connect(exitAct, &QAction::triggered,
+            this, &QWidget::close);
+    connect(fontAct, &QAction::triggered,
+            this, &MainWindow::chooseFont);
+
+    connect(colorAct, &QAction::triggered,
+            this, &MainWindow::chooseColor);
 }
